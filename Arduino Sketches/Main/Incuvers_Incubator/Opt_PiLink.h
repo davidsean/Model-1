@@ -70,8 +70,12 @@ class IncuversPiLink {
       piLink = String(piLink + F(" LS "));              // Light System
       piLink = String(piLink + incSet->getLightModule()->GetSerialAPIndicator());
       // Debugging
-      piLink = String(piLink + F(" FM "));              // Free memory
-      piLink = String(piLink + String(freeMemory(), DEC));
+
+      #ifdef DEBUG_MEMORY
+        piLink = String(piLink + F(" FM "));              // Free memory
+        piLink = String(piLink + String(freeMemory(), DEC));
+      #endif
+
 
       CRC32 crc;
       
