@@ -173,13 +173,10 @@ void setup() {
     // Don't have the info we need, load default settings and go into setup
     iUI->EnterSetupMode();
   }
-  Serial.println(F("setup finished"));
-
 }
 
 void loop() {
   unsigned long nowTime = millis();
-
   if (nowTime > RESET_AFTER_DELTA) {
     #ifdef DEBUG_GENERAL
       Serial.println(F("loop() call detected the Arduino has been on for a month, need to reset"));
