@@ -19,7 +19,7 @@ class IncuversPiLink {
     
     void SendStatus() {
       // Create string to send
-      String piLink = String("")
+      String piLink = String("");
       //piLink = String(pilink + F(" MS "));                //Time in s
       //piLink = String(piLink + String(millis(), DEC));
       piLink = String(piLink + F(" ID "));              // Identification
