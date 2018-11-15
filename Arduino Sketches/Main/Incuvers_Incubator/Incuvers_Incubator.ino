@@ -145,6 +145,9 @@ void setup() {
   runMode = iSettings->PerformLoadSettings();
   iSettings->CheckSettings();
 
+  //#HACK to run the demo
+  runMode = 1;
+
   if (runMode == 0) {
     iUI->WarnOfMissingHardwareSettings();
   }
@@ -170,6 +173,8 @@ void setup() {
     // Don't have the info we need, load default settings and go into setup
     iUI->EnterSetupMode();
   }
+  Serial.println(F("setup finished"));
+
 }
 
 void loop() {
