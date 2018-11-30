@@ -24,6 +24,7 @@ class IncuversPiLink {
       //piLink = String(piLink + String(millis(), DEC));
       piLink = String(piLink + F(" ID "));              // Identification
       piLink = String(piLink + String(incSet->getSerial()));
+
       piLink = String(piLink + F(" IV "));              // Ident Version
       piLink = String(piLink + F(SOFTWARE_VER_STRING));
       // Heating/Fan system
