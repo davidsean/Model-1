@@ -22,11 +22,11 @@ class IncuversPiLink {
       String piLink = String("");
       //piLink = String(pilink + F(" MS "));                //Time in s
       //piLink = String(piLink + String(millis(), DEC));
-      piLink = String(piLink + F(" ID "));              // Identification
-      piLink = String(piLink + String(incSet->getSerial()));
+      //piLink = String(piLink + F(" ID "));              // Identification
+      //piLink = String(piLink + String(incSet->getSerial()));
 
-      piLink = String(piLink + F(" IV "));              // Ident Version
-      piLink = String(piLink + F(SOFTWARE_VER_STRING));
+      //piLink = String(piLink + F(" IV "));              // Ident Version
+      //piLink = String(piLink + F(SOFTWARE_VER_STRING));
       // Heating/Fan system
       piLink = String(piLink + F(" FM "));              // Fan, mode
       piLink = String(piLink + String(incSet->getFanMode(), DEC));
@@ -68,10 +68,10 @@ class IncuversPiLink {
       piLink = String(piLink + F(" OA "));              // CO2, alarms
       piLink = String(piLink + GetIndicator(incSet->isO2Alarmed(), false, false, true));
       // Options
-      piLink = String(piLink + F(" LM "));              // Light Mode
-      piLink = String(piLink + String(incSet->getLightMode(), DEC));
-      piLink = String(piLink + F(" LS "));              // Light System
-      piLink = String(piLink + incSet->getLightModule()->GetSerialAPIndicator());
+      //piLink = String(piLink + F(" LM "));              // Light Mode
+      //piLink = String(piLink + String(incSet->getLightMode(), DEC));
+      //piLink = String(piLink + F(" LS "));              // Light System
+      //piLink = String(piLink + incSet->getLightModule()->GetSerialAPIndicator());
       // Debugging
 
       #ifdef DEBUG_MEMORY
