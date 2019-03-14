@@ -10,6 +10,7 @@ import threading
 import time
 import fcntl
 import commands
+import random
 
 """
 .. module:: Message
@@ -31,7 +32,9 @@ class ArduinoDirectiveHandler():
         Args:
           None
         '''
-        self.queuedictionary = {}
+        self.queue_dictionary = {}
+        
+        self.queue_lock = threading.Lock()
 
     def enqueue_parameter_update(self, param, value):
         """ Adds a parameter to the update queue, the updates will be sent
@@ -43,15 +46,15 @@ class ArduinoDirectiveHandler():
             param (str): the identifier of the parameter to update
             value (int): the value of the parameter to update
         """
-
-        if param in self.queuedictionary:
-            print("The " + param +
-                  " parameter was already in the dictionary, updating.")
-        self.queuedictionary[param] = value
+        with self.queue_lock:
+            if param in self.queue_dictionary:
+                print("The " + param +
+                      " parameter was already in the dictionary, updating.")
+            self.queue_dictionary[param] = value
 
     def get_arduino_command_string(self):
         """ Returns a complete string to send to the arduino in order to
-        update the running parameters.  Commands can be no longer than 80
+        update the running parameters.  Commands can be no longer than 50
         characters and won't involve removing the command from the queue,
         a separate system will verify that the change has been made.
 
@@ -59,12 +62,13 @@ class ArduinoDirectiveHandler():
           None
         """
         arduino_command_string = ""
-        for param in self.queuedictionary:
-            if (len(arduino_command_string) + len(param) + len(str(self.queuedictionary[param])) + 2) <= 80:
-                if len(arduino_command_string) > 0:
-                    arduino_command_string = arduino_command_string + "&"
-                arduino_command_string = arduino_command_string + \
-                    param + "|" + str(self.queuedictionary[param])
+        with self.queue_lock:
+            for param in self.queue_dictionary:
+                if (len(arduino_command_string) + len(param) + len(str(self.queue_dictionary[param])) + 2) <= 50:
+                    if len(arduino_command_string) > 0:
+                        arduino_command_string = arduino_command_string + "&"
+                    arduino_command_string = arduino_command_string + \
+                        param + "|" + str(self.queue_dictionary[param])
         commandLen = len(arduino_command_string)
         arduino_command_string = arduino_command_string + "\r"
         calcCRC = binascii.crc32(arduino_command_string.encode()) & 0xFFFFFFFF
@@ -74,15 +78,26 @@ class ArduinoDirectiveHandler():
 
         return arduino_command_string
 
-    def verify_arduino_response(self, last_sensor_frame):
+    def verify_arduino_status(self, last_sensor_frame):
         """ Will check all commands in the queuedictionary and pop off any
         for which the state coming from the arduino matches the desired level
 
         Args:
           last_sensor_frame (dict): the last sensorframe received from the Arduino
         """
-
-        return()
+        
+        with self.queue_lock:
+            queue_copy = self.queue_dictionary.copy()
+            for param in queue_copy:
+                if (param == 'ID' or param == 'IP4' or param == 'MRW' or param == 'MRF'):
+                    print("The queue dictionary contained a " + param + " parameter during a standard check, it was deleted.")
+                    self.queue_dictionary.pop(param)
+                else:
+                    if (self.queue_dictionary[param] == int(last_sensor_frame[param])):
+                        print("Removing the " + param + " parameter from the queue")
+                        self.queue_dictionary.pop(param)
+                    else:
+                        print("Unable to remove " + param + " from the queue due to mismatch (" + str(self.queue_dictionary[param]) + "|" + str(int(last_sensor_frame[param])) + ")")
 
     def clear_queue(self):
         """
@@ -91,8 +106,8 @@ class ArduinoDirectiveHandler():
         Args:
             None
         """
-
-        self.queuedictionary.clear()
+        with self.queue_lock:
+            self.queue_dictionary.clear()
 
     def get_arduino_mac_update_command_string(self, param="MWR", mac_addr="00:00:00:00:00:00"):
         """ Should only be called shortly after a boot
@@ -250,6 +265,22 @@ class Interface():
         ip = commands.getoutput('hostname -I')
         ip = ip.rstrip()
         return ip
+        
+    def send_message_to_arduino(self, msg):
+        '''
+        Will transmit a string to the Arduino via the serial link.
+
+        Args:
+            msg (string): The message string to be sent to the Arduino, including checksums et all.
+        '''
+
+        try:
+            self.serial_connection.write(msg.encode())
+            self.serial_connection.flush()
+        except BaseException as e:
+            time.sleep(1)
+            print('Error: ', e)
+
 
 
 class Sensors():
@@ -272,12 +303,14 @@ class Sensors():
         # set verbosity=1 to view more
         self.verbosity = 1
 
-        self.arduino_link = Interface()
+        self.arduino_interface = Interface()
+        self.arduino_handler = ArduinoDirectiveHandler()
 
         self.lock = threading.Lock()
-        self.monitor = threading.Thread(target=self.monitor_incubator_message)
-        self.monitor.setDaemon(True)
-        self.monitor.start()
+        self.perform_monitoring = True
+        self.interface = threading.Thread(target=self.incubator_connector_thread)
+        self.interface.setDaemon(True)
+        self.interface.start()
 
     def __str__(self):
         with self.lock:
@@ -295,32 +328,66 @@ class Sensors():
             toReturn = {'incubator': self.sensorframe}
         return toReturn
 
-    def monitor_incubator_message(self):
-        ''' Processes serial messages from Arduino
-        This runs continuously to maintain an updated
-        status of the sensors from the arduino
+    def incubator_connector_thread(self):
+        """ This function will handle the main Arduino
+        monitoring and control loop.  The loop will
+        consist of verifying how the update dictionary
+        compares to the most recent frame, popping any
+        updates which don't need to be performed; 
+        sending an update command to the Arduino; and 
+        processing the next frame coming from the 
+        Arduino.
+        
+        Args:
+          None
+        """
+        if (self.verbosity == 1):
+            print("Starting Arduino communication thread.")
+
+        self.init_arduino_runtime()
+        
+        while self.perform_monitoring:
+            self.arduino_handler.verify_arduino_status(self.sensorframe)
+            if (self.arduino_handler.queue_dictionary):
+                msg = self.arduino_handler.get_arduino_command_string()
+                if (self.verbosity == 1):
+                    print("Sending message to Arduino: " + msg)
+                self.arduino_interface.send_message_to_arduino(msg)
+            self.get_incubator_message()
+            
+    
+    def get_incubator_message(self):
+        ''' Wait for and processes a serial message 
+        from the Arduino.  Escape after five failed 
+        attempts or the reception of the good frame
 
         Args:
             None
         '''
-        if (self.verbosity == 1):
-            print("starting monitor")
-        while True:
+        wait_for_new_frame = True
+        attempts_remaining = 5
+        
+        while wait_for_new_frame:
 #            if self.arduino_link.serial_connection.in_waiting:
                 try:
-                    line = self.arduino_link.serial_connection.readline().rstrip()
+                    line = self.arduino_interface.serial_connection.readline().rstrip()
                     if self.checksum_passed(line):
+                        wait_for_new_frame = False
                         if (self.verbosity == 1):
                             print("checksum passed")
                         with self.lock:
                             self.save_message_dict(line)
+                        if (self.verbosity == 1):
+                            print(self.sensorframe)
                     else:
                         if (self.verbosity == 1):
                             print('Ign: ' + line.decode().rstrip())
                 except BaseException as e:
+                    attempts_remaining = attempts_remaining - 1
+                    if attempts_remaining < 1:
+                        wait_for_new_frame = False
                     time.sleep(1)
                     print('Error: ', e)
-                    # return
 #           else:
  #               print('Waiting... ' + format(self.arduino_link.serial_connection.in_waiting))        
   #              time.sleep(4)
@@ -368,8 +435,6 @@ class Sensors():
         # compare CRC32
         calcCRC = binascii.crc32(msg.rstrip()) & 0xffffffff
         if format(calcCRC, 'x') == msg_crc.lstrip("0"):
-            if (self.verbosity == 1):
-                print("CRC32 matches; message: " + msg)
             return True
         else:
             if (self.verbosity == 1):
@@ -406,29 +471,48 @@ class Sensors():
         self.sensorframe['Time'] = time.strftime(
             "%Y-%m-%d %H:%M:%S", time.gmtime())
         return
-    
-    def send_message_to_arduino(self, msg):
-        '''
-        Will transmit a string to the Arduino via the serial link.
+        
+    def init_arduino_runtime(self):
+        """ 
+        Initialize the arduino's first-boot run-time information
+        such as serial ID, IP, MAC, etc.
         
         Args:
-            msg (string): The message string to be sent to the Arduino, including checksums et all.
-        '''
+          none
+          
+        """
         
-        try:
-            self.arduino_link.serial_connection.write(msg.encode())
-            self.arduino_link.serial_connection.flush()
-        except BaseException as e:
-            time.sleep(1)
-            print('Error: ', e)
+        msg0 = self.arduino_handler.get_arduino_serial_update_command_string(self.arduino_interface.get_serial_number())
+        if (self.verbosity == 1):
+            print("Sending message: " + msg0.rstrip())
+        self.arduino_interface.send_message_to_arduino(msg0)
+        time.sleep(5) # Required to prevent a buffer overflow on the arduino.
 
+        msg1 = self.arduino_handler.get_arduino_ip_update_command_string(self.arduino_interface.get_ip_address())
+        if (self.verbosity == 1):
+            print("Sending message: " + msg1.rstrip())
+        self.arduino_interface.send_message_to_arduino(msg1)
+        time.sleep(5)  # Required to prevent a buffer overflow on the arduino.
+
+        msg2 = self.arduino_handler.get_arduino_mac_update_command_string("MWR", self.arduino_interface.get_iface_hardware_address("eth0"))
+        if (self.verbosity == 1):
+            print("Sending message: " + msg2.rstrip())
+        self.arduino_interface.send_message_to_arduino(msg2)
+        time.sleep(5) # Required to prevent a buffer overflow on the arduino.
+
+        msg3 = self.arduino_handler.get_arduino_mac_update_command_string("MWF", self.arduino_interface.get_iface_hardware_address("wlan0"))
+        if (self.verbosity == 1):
+            print("Sending message: " + msg3.rstrip())
+        self.arduino_interface.send_message_to_arduino(msg3)
+
+    
              
 
 if __name__ == '__main__':
     print("PySerial version: " + serial.__version__)
 
     test_connections = False
-    test_connections = True
+    #test_connections = True
     if test_connections:
         iface = Interface()
         print("Hardware serial number: {}".format(iface.get_serial_number()))
@@ -442,34 +526,36 @@ if __name__ == '__main__':
         print("Has serial connection with Arduino: {}".format(iface.serial_connection.is_open))
         del iface
 
-    test_commandset = True
+    test_commandset = False
+    #test_commandset = True
     if test_commandset:
         arduino_handler = ArduinoDirectiveHandler()
         mon = Sensors()
 
-        msg0 = arduino_handler.get_arduino_serial_update_command_string(mon.arduino_link.get_serial_number())
+        msg0 = arduino_handler.get_arduino_serial_update_command_string(mon.arduino_interface.get_serial_number())
         print("Sending message: " + msg0)
-        mon.send_message_to_arduino(msg0)
+        mon.arduino_interface.send_message_to_arduino(msg0)
         time.sleep(5)
 
-        msg1 = arduino_handler.get_arduino_ip_update_command_string(mon.arduino_link.get_ip_address())
+        msg1 = arduino_handler.get_arduino_ip_update_command_string(mon.arduino_interface.get_ip_address())
         print("Sending message: " + msg1)
-        mon.send_message_to_arduino(msg1)
+        mon.arduino_interface.send_message_to_arduino(msg1)
         time.sleep(5)
         
-        msg2 = arduino_handler.get_arduino_mac_update_command_string("MWR", mon.arduino_link.get_iface_hardware_address("eth0"))
+        msg2 = arduino_handler.get_arduino_mac_update_command_string("MWR", mon.arduino_interface.get_iface_hardware_address("eth0"))
         print("Sending message: " + msg2)
-        mon.send_message_to_arduino(msg2)
+        mon.arduino_interface.send_message_to_arduino(msg2)
         time.sleep(5)
         
-        msg3 = arduino_handler.get_arduino_mac_update_command_string("MWF", mon.arduino_link.get_iface_hardware_address("wlan0"))
+        msg3 = arduino_handler.get_arduino_mac_update_command_string("MWF", mon.arduino_interface.get_iface_hardware_address("wlan0"))
         print("Sending message: " + msg3)
-        mon.send_message_to_arduino(msg3)
+        mon.arduino_interface.send_message_to_arduino(msg3)
 
         del arduino_handler
+        del mon
 
     monitor_serial = False
-    monitor_serial = True
+    #monitor_serial = True
     if monitor_serial:
         mon = Sensors()
         mon.verbosity = 0
@@ -482,3 +568,34 @@ if __name__ == '__main__':
             print(mon.sensorframe)
             # print(mon.arduino_link.serial_connection.readline())
         del mon
+        
+        
+    standard_run = True
+    if standard_run:
+        print("Spawning sensor handling thread.")
+        sensor_handler = Sensors()
+        sensor_handler.verbosity = 1
+        
+        print("Main thread is sleeping for 60 seconds to allow the Arduino to get its runtime configuration")
+        time.sleep(60)
+        
+        while True:
+            op = random.randint(1,4)
+            if (op == 1):
+                val = random.randint(2000,4000)
+                print("Attempting to set Temperature to " + str(val))
+                sensor_handler.arduino_handler.enqueue_parameter_update("TP", val)
+            elif (op == 2):
+                val = random.randint(200,800)
+                print("Attempting to set CO2 to " + str(val))
+                sensor_handler.arduino_handler.enqueue_parameter_update("CP", val)
+            elif (op == 3):
+                val = random.randint(100,2000)
+                print("Attempting to set O2 to " + str(val))
+                sensor_handler.arduino_handler.enqueue_parameter_update("OP", val)
+                
+            print("Main thread is sleeping. zZzZ")
+            time.sleep(30)
+            
+            
+        del sensor_handler
