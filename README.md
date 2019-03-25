@@ -65,8 +65,21 @@ An alarm is raised when the system detects an anomalous state or difficulty in r
 The alarm for the heating subsystem has key `TA`, and can have the value of `0 = off`, `1 = report`, `2 = alarm`
 
 ### Physical user interface
-Red Buttons: single press, double press.
+#### Input push buttons
+
+Three input combinations can be made using the two red buttons: single press upper and lower as well as a double press.
+For an input to be registered the buttons need to be held pressed for about a 1/2 second.
+
 Make sure to save the settings, or else they will be reset after a reboot.
+
+
+#### LCD display
+
+When the heating mode is `Monitor` or `Maintain`, a temperature reading from the chamber probe is displayed on the LCD screen. 
+The heatings state of the chamber and door heating pads are shown on the LCD as special "indicator" characters.
+For the chamber, the characters are: `*` for heating and `+` for stepping.
+There are alternative set of indicators for the door in order to not get mixed up: `#` for heating and `=` for stepping.
+
 
 ## Monitor
 The Arduino control board broadcasts sensor readings, target, alarms and modes over serial.
