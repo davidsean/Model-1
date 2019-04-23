@@ -68,6 +68,7 @@
 //#define DEBUG_TEMP true
 //#define DEBUG_LIGHT true
 //#define DEBUG_MEMORY true
+#define DEBUG_ROCKER true
 
 // Build/upload-time options - comment out unneeded modules in order to save program space.  Please only ensure only one O2 module is included at any given time.
 #define INCLUDE_O2_SERIAL true
@@ -76,6 +77,7 @@
 #define INCLUDE_CO2 true
 #define INCLUDE_TEMP true
 //#define INCLUDE_LIGHT true
+#define INCLUDE_ROCKER true
 //#define INCLUDE_PILINK true
 
 // Hardwired settings
@@ -122,6 +124,12 @@
 #include "Env_Heat.h"
 #include "Env_CO2_COZIR.h"
 #include "Opt_Light.h"
+
+#ifdef INCLUDE_ROCKER 
+#include <Servo.h>
+#include "Opt_Rocker.h"
+#endif
+
 #include "Incuvers_Settings.h"
 #include "Opt_PiLink.h"
 #include "Incuvers_UI.h"
@@ -133,6 +141,8 @@ IncuversLightingSystem* iLight;
 IncuversCO2System* iCO2;
 IncuversO2System* iO2;
 IncuversPiLink* iPi;
+IncuversRockingingSystem* iRocker;
+
 IncuversUI* iUI;
 
 void setup() {
@@ -168,6 +178,10 @@ void setup() {
 
   iPi = new IncuversPiLink();
   iPi->SetupPiLink(iSettings);
+
+  iRocker = new IncuversRockingingSystem();
+  iRocker->SetupRocker(A15, true);
+  //pinMode(A15, OUTPUT);
   
   iUI->AttachSettings(iSettings);
   iUI->DisplayRunMode(runMode); 
@@ -196,4 +210,6 @@ void loop() {
   iLight->DoTick();
   iUI->DoTick(); 
   iPi->DoTick();
+  iRocker->DoTick();
+  //analogWrite(A15, 50);
 }
