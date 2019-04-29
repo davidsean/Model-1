@@ -12,13 +12,14 @@ class IncuversO2System {
   private:
     int pinAssignment_Valve;
     int mode;
-    
+
     long lastO2Check;
     long tickTime;
     long setPointTime;
     long startO2At;
     long shutO2At;
     long actionpoint;
+    long valve_trigger_count;
 
     boolean enabled;
     boolean on;
@@ -26,12 +27,12 @@ class IncuversO2System {
     boolean started;
     boolean alarmOver;
     boolean alarmUnder;
-    
+
     float level;
     float setPoint;
     float temp;
     int pressure;
-    
+
     IncuversSerialSensor* iSS;
 
     void CheckJumpStatus() {
@@ -54,13 +55,13 @@ class IncuversO2System {
     }
 
     void GetO2Reading_Luminox() {
-      #ifdef DEBUG_O2 
+      #ifdef DEBUG_O2
           Serial.println(F("O2Reading_Luminox"));
       #endif
-    
+
       String luminoxString = "";
       float reading;
-      
+
       for (int i = 0; i < 2; i++)
       {
         luminoxString = this->iSS->GetSerialSensorReading(38, 44);
@@ -68,11 +69,11 @@ class IncuversO2System {
         //                                O=ppO2 in mbar   P pressure in mbar
         //                                         T=temp in deg C         e=sensor errors
         //                                                        %=O2 concentration in %
-        
+
         reading = GetDecimalSensorReading('%', luminoxString, -100);
-        
+
         if (reading > 0 && reading < 30) {
-          level = reading;  
+          level = reading;
           #ifdef DEBUG_O2
             Serial.print("  O2 level is detected to be: ");
             Serial.println(level);
@@ -82,13 +83,13 @@ class IncuversO2System {
           #ifdef DEBUG_O2
             Serial.print(F("\tO2 sensor returned invalid reading attempt "));
             Serial.println(i);
-          #endif 
+          #endif
         }
 
         reading = GetDecimalSensorReading('T', luminoxString, -100);
-        
+
         if (reading > -40 && reading < 80) {
-          temp = reading;  
+          temp = reading;
           #ifdef DEBUG_O2
             Serial.print("  O2 sensor detects temperature to be: ");
             Serial.println(temp);
@@ -98,19 +99,20 @@ class IncuversO2System {
           #ifdef DEBUG_O2
             Serial.print(F("\tO2 sensor returned invalid temperature reading"));
             Serial.println(i);
-          #endif 
+          #endif
         }
 
         pressure = GetIntegerSensorReading('P', luminoxString, -100);
       }
     }
-    
+
     void CheckO2Maintenance() {
       if (level > setPoint  && level >= 0) {
         if (level < (setPoint * OO_STEP_THRESH)) {
           if (tickTime > actionpoint + N_BLEEDTIME_STEPPING) {
             // In stepping mode and not worried about bleed delay.
             digitalWrite(pinAssignment_Valve, HIGH);
+            this->valve_trigger_count++;
             delay(N_DELTA_STEPPING);
             digitalWrite(pinAssignment_Valve, LOW);
             actionpoint = tickTime;
@@ -119,7 +121,7 @@ class IncuversO2System {
             #endif
           } // there is no else, we need to wait for the bleedtime to expire.
         } else {
-          // below the setpoint and the stepping threshold, 
+          // below the setpoint and the stepping threshold,
           if (!on && tickTime > (actionpoint + N_BLEEDTIME_JUMP)) {
             if (started == false) {
               started = true;
@@ -135,6 +137,7 @@ class IncuversO2System {
             on = true;
             shutO2At = (tickTime + N_DELTA_JUMP);
             digitalWrite(pinAssignment_Valve, HIGH);
+            this->valve_trigger_count++;
             #ifdef DEBUG_O2
              Serial.print(F("\tN jump from "));
               Serial.print(tickTime);
@@ -166,17 +169,18 @@ class IncuversO2System {
       #ifdef DEBUG_O2
         Serial.println(F("O2::Setup"));
       #endif
-      
+
       this->enabled = false;
+      this->valve_trigger_count = 0;
       level = -100;
       // Setup Serial Interface
       this->iSS = new IncuversSerialSensor();
-      this->iSS->Initialize(rxPin, txPin, "M 1", "A"); 
-      
+      this->iSS->Initialize(rxPin, txPin, "M 1", "A");
+
       //Setup the gas system
       this->pinAssignment_Valve = relayPin;
-      pinMode(this->pinAssignment_Valve, OUTPUT);  
-      
+      pinMode(this->pinAssignment_Valve, OUTPUT);
+
       #ifdef DEBUG_O2
         Serial.println(F("Enabled."));
         Serial.print(F("\tRx: "));
@@ -186,7 +190,7 @@ class IncuversO2System {
         Serial.print(F("\tRelay: "));
         Serial.println(relayPin);
       #endif
-    
+
       this->MakeSafeState();
     }
 
@@ -194,7 +198,7 @@ class IncuversO2System {
       this->setPoint = tempSetPoint;
       this->setPointTime = millis();
     }
-    
+
     void MakeSafeState() {
       digitalWrite(this->pinAssignment_Valve, LOW);   // Set LOW (solenoid closed off)
       this->on = false;
@@ -205,9 +209,9 @@ class IncuversO2System {
     void DoTick() {
       if (this->enabled) {
         this->tickTime = millis();
-      
+
         if (mode == 2 && !this->stepping) {
-          this->CheckJumpStatus();  
+          this->CheckJumpStatus();
         }
 
         this->GetO2Reading_Luminox();
@@ -219,6 +223,10 @@ class IncuversO2System {
 
     float getO2Level() {
       return level;
+    }
+
+    float getNValveCount() {
+      return valve_trigger_count;
     }
 
     boolean isNOpen() {
@@ -258,16 +266,16 @@ class IncuversO2System {
 #else
 class IncuversO2System {
   private:
-    
+
   public:
     void SetupO2(int rxPin, int txPin, int relayPin) {
-      pinMode(relayPin, OUTPUT);  
+      pinMode(relayPin, OUTPUT);
       digitalWrite(relayPin, LOW);   // Set LOW (solenoid closed off)
     }
 
     void SetSetPoint(float tempSetPoint) {
     }
-    
+
     void MakeSafeState() {
     }
 

@@ -1,7 +1,7 @@
-#ifdef INCLUDE_PILINK 
+#ifdef INCLUDE_PILINK
 /*
  * Incuvers PiLink code.
- * 
+ *
  * Only functional on 1.0.0+ control board units.
  */
 class IncuversPiLink {
@@ -10,9 +10,9 @@ class IncuversPiLink {
     bool isEnabled;
 
     void CheckForCommands() {
-      
+
     }
-    
+
     void SendStatus() {
       // General Identification
       Serial1.print(millis());
@@ -43,6 +43,8 @@ class IncuversPiLink {
       Serial1.print(incSet->getCO2SetPoint(), 2);
       Serial1.print(F(" CC "));              // CO2, reading
       Serial1.print(incSet->getCO2Level(), 2);
+      Serial1.print(F(" CN "));              // CO2, trigger count
+      Serial1.print(incSet->getCO2Count(), DEC);
       Serial1.print(F(" CS "));              // CO2, status
       Serial1.print(GetIndicator(incSet->isCO2Open(), incSet->isCO2Stepping(), false, true));
       Serial1.print(F(" CA "));              // CO2, alarms
@@ -54,6 +56,8 @@ class IncuversPiLink {
       Serial1.print(incSet->getO2SetPoint(), 2);
       Serial1.print(F(" OC "));              // O2, reading
       Serial1.print(incSet->getO2Level(), 2);
+      Serial1.print(F(" ON "));              // CO2, trigger count
+      Serial1.print(incSet->getNValveCount(), DEC);
       Serial1.print(F(" OS "));              // CO2, status
       Serial1.print(GetIndicator(incSet->isO2Open(), incSet->isO2Stepping(), false, true));
       Serial1.print(F(" OA "));              // CO2, alarms
@@ -68,7 +72,7 @@ class IncuversPiLink {
       Serial1.print(freeMemory());
       Serial1.println();
     }
-    
+
   public:
     void SetupPiLink(IncuversSettingsHandler* iSettings) {
       this->incSet = iSettings;
